@@ -34,6 +34,7 @@ Desktop.ini
 # Claude Code
 .claude/
 .superpowers/
+docs/superpowers/
 
 # Environment
 .env
