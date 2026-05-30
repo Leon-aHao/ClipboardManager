@@ -2,17 +2,40 @@
 
 A Windows system-tray clipboard history manager built with PySide6.
 
+## 为什么不用 Win+V？
+
+Windows 自带的剪贴板（Win+V）有两个致命缺陷：
+
+1. **无法预览内容** — 图片和长文本缩在小小的条目里，根本看不清
+2. **无法拖拽复用** — 只能点一下粘贴到当前窗口，无法把图片拖到桌面保存，也无法拖到微信/Word 等应用中
+
+Clipboard Manager 解决了这两个问题。
+
+### 右键预览
+
+鼠标右键按住条目即可放大预览，图片可查看细节，长文本可逐行阅读，松开即关。
+
+![Clipboard Manager 主界面](docs/images/clipboard01.png)
+
+### 拖拽到任意应用
+
+直接把图片拖到桌面保存为文件，拖到微信/QQ 聊天窗口发送，拖到 Word/PPT 嵌入文档。也可以拖出文字、HTML、文件列表。
+
+![右键放大预览](docs/images/clipboard02.png)
+
 ## Features
 
-- Monitors system clipboard and records text, HTML, images, files, and color values
-- Glass-morphism popup UI with mouse-follow glow animation
-- Drag items directly to other applications
-- Pinned items protected from auto-cleanup
-- Dark / light theme support
-- Auto-start with Windows
+- 监控系统剪贴板，支持文本、HTML、图片、文件列表、颜色值
+- **右键长按任意条目即可放大预览**（图片 / 长文本均支持）
+- **拖拽条目到桌面 / 微信 / Word 等任意应用**
+- 玻璃拟态弹窗 UI，鼠标跟随光晕动画
+- 钉选条目保护，不会被自动清理
+- 暗色 / 亮色主题
+- 开机自启
 
 ## Requirements
 
+- Windows 10+
 - Python 3.10+
 - PySide6 >= 6.5.0
 
@@ -23,13 +46,15 @@ pip install -r requirements.txt
 python -m clipboard_manager.main
 ```
 
+## Download
+
+从 [Releases](https://github.com/Leon-aHao/clipboard-manager-demo/releases) 页面下载 `ClipboardManager.exe`，双击运行，无需安装 Python。
+
 ## Build
 
 ```bash
 pyinstaller clipboard_manager.spec
 ```
-
-The standalone executable will be in `dist/ClipboardManager.exe`.
 
 ## Project Structure
 
