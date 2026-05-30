@@ -1,0 +1,41 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Build artifacts
+*.spec
+*.exe
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Sensitive / personal documents
+专业综合实训A_制作日记与总结.md
+
+# Claude Code
+.claude/
+.superpowers/
+
+# Environment
+.env
+.env.local
+*.log
