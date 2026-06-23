@@ -244,6 +244,7 @@ class AppController(QObject):
         if dlg is None:
             return
 
+        popup = self._popup
         app = QApplication.instance()
         if app is None:
             return
@@ -256,21 +257,25 @@ class AppController(QObject):
                     this.deleteLater()
                     return False
                 if event.type() == QEvent.Type.MouseButtonPress:
-                    clicked_widget = app.widgetAt(event.globalPosition().toPoint())
+                    pt = event.globalPosition().toPoint()
+                    clicked_widget = app.widgetAt(pt)
                     if clicked_widget is not None:
                         w = clicked_widget
                         while w is not None:
+                            # 点击在翻译弹窗内 → 不拦截
                             if w is dlg:
                                 return False
+                            # 点击在剪切板弹窗内 → 不拦截（toggle 逻辑会处理）
+                            if w is popup:
+                                return False
                             w = w.parentWidget()
-                    # 点击在弹窗外 → 关闭
                     self._close_translate_dialog()
                     app.removeEventFilter(this)
                     this.deleteLater()
                     return False
                 return False
 
-        app.installEventFilter(_Filter(app))
+        QTimer.singleShot(0, lambda: app.installEventFilter(_Filter(app)) if dlg.isVisible() else None)
 
     def _close_translate_dialog(self):
         """关闭翻译弹窗并清理引用。"""

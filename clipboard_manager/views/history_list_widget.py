@@ -6,6 +6,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QStyledItemDelegate, QStyleOptionViewItem,
     QStyle, QApplication, QMenu, QDialog, QVBoxLayout, QLabel, QScrollArea,
+    QHBoxLayout, QPushButton, QTextEdit,
 )
 
 from ..models.clipboard_item import ClipboardItem, ContentFormat
@@ -221,18 +222,40 @@ class _PreviewDialog(QDialog):
         self.layout().addWidget(frame)
 
     def _setup_text(self, item: ClipboardItem):
-        frame = QLabel(self)
+        from PySide6.QtGui import QFontMetrics, QFont
+
         text = item.plain_text or ""
-        frame.setText(text)
-        frame.setWordWrap(True)
-        frame.setStyleSheet(
-            "QLabel { color: #000000; font-size: 14px; padding: 8px; background: transparent; }"
+
+        edit = QTextEdit()
+        edit.setPlainText(text)
+        edit.setReadOnly(True)
+        edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        edit.setStyleSheet(
+            "QTextEdit { color: #000000; font-size: 14px; padding: 8px;"
+            "  background: transparent; border: none; }"
+            "QScrollBar:vertical { width: 0px; background: transparent; }"
         )
-        frame.setMaximumWidth(460)
-        frame.setMinimumWidth(200)
-        frame.adjustSize()
-        self.resize(frame.width() + 40, frame.height() + 40)
-        self.layout().addWidget(frame)
+        edit.document().setDocumentMargin(0)
+
+        # 根据内容动态宽高
+        font = QFont()
+        font.setPixelSize(14)
+        fm = QFontMetrics(font)
+        max_line_w = max((fm.horizontalAdvance(ln) for ln in text.split('\n')), default=0)
+        MIN_W, MAX_W = 200, 440
+        text_w = max(MIN_W, min(max_line_w + 24, MAX_W))
+
+        doc = edit.document()
+        doc.setTextWidth(text_w)
+        content_h = int(doc.size().height()) + 16
+        MAX_H = 500
+        h = min(max(content_h, 40), MAX_H)
+        edit.setFixedHeight(h)
+        edit.setFixedWidth(text_w + 8)
+
+        self.setFixedSize(text_w + 40, h + 40)
+        self.layout().addWidget(edit)
 
     def paintEvent(self, event):
         if not self._is_image:
@@ -293,7 +316,7 @@ class _PreviewDialog(QDialog):
 
 
 class _TranslationResultDialog(QDialog):
-    """毛玻璃弹窗 — 显示原文和翻译结果。"""
+    """毛玻璃弹窗 — 显示原文和翻译结果，译文可选取复制。"""
 
     def __init__(self, original: str, translated: str, parent=None):
         super().__init__(parent)
@@ -305,43 +328,260 @@ class _TranslationResultDialog(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
-        self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(20, 16, 20, 16)
-        self._layout.setSpacing(8)
+        self._translated_text = translated
 
-        # 原文标签
-        self._src_label = QLabel(original)
-        self._src_label.setWordWrap(True)
-        self._src_label.setStyleSheet("color: #444444; font-size: 13px; background: transparent;")
-        self._src_label.setMaximumWidth(420)
-        self._layout.addWidget(self._src_label)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 12, 14, 12)
+        layout.setSpacing(6)
+
+        # 顶栏：关闭按钮（右上角）
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.addStretch()
+        close_btn = self._make_close_btn()
+        close_btn.clicked.connect(self.close)
+        header.addWidget(close_btn)
+        layout.addLayout(header)
+
+        # 原文（可滚动，避免撑爆窗口）
+        self._src_edit = QTextEdit()
+        self._src_edit.setPlainText(original)
+        self._src_edit.setReadOnly(True)
+        self._src_edit.setMaximumWidth(420)
+        self._src_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._src_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._src_edit.setStyleSheet(
+            "QTextEdit { color: #444444; font-size: 13px;"
+            "  background: transparent; border: none; }"
+            "QScrollBar:vertical { width: 0px; background: transparent; }"
+        )
+        self._src_edit.document().setDocumentMargin(0)
+        layout.addWidget(self._src_edit)
 
         # 分隔线
-        self._sep = QLabel(self)
-        self._sep.setFixedHeight(1)
-        self._sep.setStyleSheet("background: rgba(0,0,0,0.08);")
-        self._layout.addWidget(self._sep)
+        sep = QLabel(self)
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background: rgba(0,0,0,0.08);")
+        layout.addWidget(sep)
 
-        # 译文标签
-        self._tgt_label = QLabel(translated)
-        self._tgt_label.setWordWrap(True)
-        self._tgt_label.setStyleSheet("color: #1a1a1a; font-size: 16px; font-weight: bold; background: transparent;")
-        self._tgt_label.setMaximumWidth(420)
-        self._layout.addWidget(self._tgt_label)
+        # 译文（可选取，超长可滚动）
+        self._tgt_edit = QTextEdit()
+        self._tgt_edit.setPlainText(translated)
+        self._tgt_edit.setReadOnly(True)
+        self._tgt_edit.setMaximumWidth(420)
+        self._tgt_edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._tgt_edit.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._tgt_edit.setStyleSheet(
+            "QTextEdit { color: #1a1a1a; font-size: 16px; font-weight: bold;"
+            "  background: transparent; border: none; }"
+            "QTextEdit::selection { background: rgba(100, 160, 255, 0.35); }"
+            "QScrollBar:vertical { width: 0px; background: transparent; }"
+        )
+        self._tgt_edit.document().setDocumentMargin(0)
+        self._tgt_edit.document().contentsChanged.connect(self._resize)
+        layout.addWidget(self._tgt_edit)
 
-        self._resize()
+        # 底部：复制按钮（左下角）
+        bottom = QHBoxLayout()
+        bottom.setContentsMargins(0, 0, 0, 0)
+        copy_btn = self._make_copy_btn()
+        copy_btn.clicked.connect(self._copy_translation)
+        bottom.addWidget(copy_btn)
+        bottom.addStretch()
+        layout.addLayout(bottom)
 
     def update_content(self, original: str, translated: str):
         """更新原文和译文内容（翻译完成时调用）。"""
-        self._src_label.setText(original)
-        self._tgt_label.setText(translated)
-        self._tgt_label.setStyleSheet("color: #1a1a1a; font-size: 16px; font-weight: bold; background: transparent;")
+        self._src_edit.setPlainText(original)
+        self._translated_text = translated
+        self._tgt_edit.setPlainText(translated)
         self._resize()
 
+    def _copy_translation(self):
+        """复制全部译文到剪贴板。"""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self._translated_text)
+
     def _resize(self):
-        self.adjustSize()
-        w = min(self.width(), 460)
-        self.setFixedSize(w + 40, self.height() + 32)
+        from PySide6.QtGui import QFontMetrics, QFont
+        from PySide6.QtCore import QRect, Qt
+
+        # 显式构造字体确保与 stylesheet 一致
+        src_font = QFont()
+        src_font.setPixelSize(13)
+        tgt_font = QFont()
+        tgt_font.setPixelSize(16)
+        tgt_font.setBold(True)
+
+        src_fm = QFontMetrics(src_font)
+        tgt_fm = QFontMetrics(tgt_font)
+
+        src_text = self._src_edit.toPlainText() or ""
+        tgt_text = self._tgt_edit.toPlainText() or ""
+
+        # 计算内容所需宽度
+        src_w = src_fm.horizontalAdvance(src_text) if src_text else 0
+        tgt_w = max((tgt_fm.horizontalAdvance(ln) for ln in tgt_text.split('\n')), default=0)
+        content_w = max(src_w, tgt_w) + 8
+
+        MIN_W, MAX_W = 100, 420
+        text_w = max(MIN_W, min(content_w, MAX_W))
+
+        # 固定子控件宽度
+        self._src_edit.setFixedWidth(text_w)
+        self._tgt_edit.setFixedWidth(text_w)
+
+        # 源文本排版高度（上限 120px，超出滚动）
+        src_doc = self._src_edit.document()
+        src_doc.setTextWidth(text_w)
+        src_h = min(int(src_doc.size().height()) + 4, 120)
+        self._src_edit.setFixedHeight(max(src_h, 22))
+
+        # 译文文档排版高度
+        doc = self._tgt_edit.document()
+        doc.setTextWidth(text_w)
+        tgt_h = int(doc.size().height()) + 4
+        MAX_TGT_H = 350
+        tgt_h = min(max(tgt_h, 22), MAX_TGT_H)
+        self._tgt_edit.setFixedHeight(tgt_h)
+
+        # 手动计算总尺寸
+        margin_l, margin_t, margin_r, margin_b = 20, 12, 14, 12
+        gap = 6
+        h_total = (
+            margin_t + margin_b
+            + 24                           # 头栏关闭按钮
+            + gap                           # 头栏 → 原文
+            + src_h                         # 原文（上限 120px）
+            + gap                           # 原文 → 分隔线
+            + 1                             # 分隔线
+            + gap                           # 分隔线 → 译文
+            + tgt_h                         # 译文
+            + gap                           # 译文 → 底部
+            + 28                            # 复制按钮
+        )
+        w_total = text_w + margin_l + margin_r
+        screen = QApplication.primaryScreen()
+        if screen:
+            max_h = screen.availableGeometry().height() - 80
+        else:
+            max_h = 700
+        self.setFixedSize(w_total, min(h_total, max_h))
+        self._reposition()
+
+    def _make_copy_btn(self):
+        """毛玻璃风格复制按钮。"""
+
+        class _GB(QPushButton):
+            def __init__(this):
+                super().__init__("复制")
+                this.setCursor(Qt.CursorShape.PointingHandCursor)
+                this.setFixedSize(52, 28)
+                this._hovered = False
+
+            def enterEvent(this, event):
+                this._hovered = True
+                this.update()
+
+            def leaveEvent(this, event):
+                this._hovered = False
+                this.update()
+
+            def paintEvent(this, event):
+                p = QPainter(this)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                r = QRectF(this.rect()).adjusted(2, 2, -2, -2)
+                radius = 8.0
+                path = QPainterPath()
+                path.addRoundedRect(r, radius, radius)
+                p.setClipPath(path)
+                fill_alpha = 160 if this._hovered else 80
+                p.fillRect(r, QColor(255, 255, 255, fill_alpha))
+                p.setClipping(False)
+                grad = QLinearGradient(r.topLeft(), r.bottomRight())
+                grad.setColorAt(0.0, QColor(255, 255, 255, 200))
+                grad.setColorAt(0.2, QColor(255, 255, 255, 45))
+                grad.setColorAt(0.5, QColor(255, 255, 255, 0))
+                grad.setColorAt(0.8, QColor(255, 255, 255, 45))
+                grad.setColorAt(1.0, QColor(255, 255, 255, 200))
+                p.setPen(QPen(QBrush(grad), 1.0))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(r, radius, radius)
+                ir = r.adjusted(0.7, 0.7, -0.7, -0.7)
+                dg = QLinearGradient(ir.topLeft(), ir.bottomRight())
+                dg.setColorAt(0.0, QColor(0, 0, 0, 75))
+                dg.setColorAt(0.12, QColor(0, 0, 0, 18))
+                dg.setColorAt(0.35, QColor(0, 0, 0, 0))
+                dg.setColorAt(0.65, QColor(0, 0, 0, 0))
+                dg.setColorAt(0.88, QColor(0, 0, 0, 18))
+                dg.setColorAt(1.0, QColor(0, 0, 0, 75))
+                p.setPen(QPen(QBrush(dg), 0.7))
+                p.drawRoundedRect(ir, radius - 0.7, radius - 0.7)
+                p.setPen(QColor(30, 30, 30))
+                f = QFont(p.font())
+                f.setPixelSize(13)
+                p.setFont(f)
+                p.drawText(r, Qt.AlignmentFlag.AlignCenter, this.text())
+                p.end()
+
+        return _GB()
+
+    def _make_close_btn(self):
+        """毛玻璃关闭按钮（右上角）。"""
+
+        class _CB(QPushButton):
+            def __init__(this):
+                super().__init__("✕")
+                this.setCursor(Qt.CursorShape.PointingHandCursor)
+                this.setFixedSize(24, 24)
+                this._hovered = False
+
+            def enterEvent(this, event):
+                this._hovered = True
+                this.update()
+
+            def leaveEvent(this, event):
+                this._hovered = False
+                this.update()
+
+            def paintEvent(this, event):
+                p = QPainter(this)
+                p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                r = QRectF(this.rect()).adjusted(2, 2, -2, -2)
+                radius = r.width() / 2
+                path = QPainterPath()
+                path.addRoundedRect(r, radius, radius)
+                p.setClipPath(path)
+                fill_alpha = 140 if this._hovered else 50
+                p.fillRect(r, QColor(255, 255, 255, fill_alpha))
+                p.setClipping(False)
+                grad = QLinearGradient(r.topLeft(), r.bottomRight())
+                grad.setColorAt(0.0, QColor(255, 255, 255, 190))
+                grad.setColorAt(0.2, QColor(255, 255, 255, 40))
+                grad.setColorAt(0.5, QColor(255, 255, 255, 0))
+                grad.setColorAt(0.8, QColor(255, 255, 255, 40))
+                grad.setColorAt(1.0, QColor(255, 255, 255, 190))
+                p.setPen(QPen(QBrush(grad), 0.8))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRoundedRect(r, radius, radius)
+                ir = r.adjusted(0.6, 0.6, -0.6, -0.6)
+                dg = QLinearGradient(ir.topLeft(), ir.bottomRight())
+                dg.setColorAt(0.0, QColor(0, 0, 0, 70))
+                dg.setColorAt(0.12, QColor(0, 0, 0, 15))
+                dg.setColorAt(0.35, QColor(0, 0, 0, 0))
+                dg.setColorAt(0.65, QColor(0, 0, 0, 0))
+                dg.setColorAt(0.88, QColor(0, 0, 0, 15))
+                dg.setColorAt(1.0, QColor(0, 0, 0, 70))
+                p.setPen(QPen(QBrush(dg), 0.6))
+                p.drawRoundedRect(ir, radius - 0.6, radius - 0.6)
+                p.setPen(QColor(60, 60, 60))
+                f = QFont(p.font())
+                f.setPixelSize(12)
+                p.setFont(f)
+                p.drawText(r, Qt.AlignmentFlag.AlignCenter, "✕")
+                p.end()
+
+        return _CB()
 
     def paintEvent(self, event):
         p = QPainter(self)
@@ -383,7 +623,16 @@ class _TranslationResultDialog(QDialog):
 
     def show_at_cursor(self):
         from PySide6.QtGui import QCursor
-        cursor = QCursor.pos()
+        self._anchor_cursor = QCursor.pos()
+        self._resize()    # 根据锚点位置重新计算并定位
+        self.show()
+        self.raise_()
+
+    def _reposition(self):
+        """将弹窗右下角对齐到锚点光标位置。"""
+        if not hasattr(self, '_anchor_cursor') or self._anchor_cursor is None:
+            return
+        cursor = self._anchor_cursor
         x = cursor.x() - self.width()
         y = cursor.y() - self.height()
         screen = QApplication.primaryScreen()
@@ -392,8 +641,6 @@ class _TranslationResultDialog(QDialog):
             x = max(avail.left() + 4, min(x, avail.right() - self.width() - 4))
             y = max(avail.top() + 4, min(y, avail.bottom() - self.height() - 4))
         self.move(x, y)
-        self.show()
-        self.raise_()
 
 
 class HistoryListWidget(QListWidget):
