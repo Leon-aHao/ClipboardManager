@@ -384,8 +384,8 @@ class _TranslationResultDialog(QDialog):
     def show_at_cursor(self):
         from PySide6.QtGui import QCursor
         cursor = QCursor.pos()
-        x = cursor.x() - self.width() // 2
-        y = cursor.y() - self.height() - 20
+        x = cursor.x() - self.width()
+        y = cursor.y() - self.height()
         screen = QApplication.primaryScreen()
         if screen:
             avail = screen.availableGeometry()
