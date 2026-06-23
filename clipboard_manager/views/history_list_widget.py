@@ -79,9 +79,9 @@ class _ItemDelegate(QStyledItemDelegate):
                 painter.setPen(QColor(100, 140, 220))
                 painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, fmt)
 
-            text_rect = QRectF(rect).adjusted(42, 6, -8, -6)
+            text_rect = QRectF(rect).adjusted(42, 6, -34, -6)
         else:
-            text_rect = QRectF(rect).adjusted(12, 6, -8, -6)
+            text_rect = QRectF(rect).adjusted(12, 6, -34, -6)
         preview = index.data(Qt.ItemDataRole.DisplayRole) or ""
         meta = index.data(Qt.ItemDataRole.UserRole + 1) or ""
 
@@ -102,6 +102,63 @@ class _ItemDelegate(QStyledItemDelegate):
         meta_rect = QRectF(text_rect).adjusted(0, text_rect.height() / 2 - 1, 0, 0)
         elided_meta = fm_meta.elidedText(meta, Qt.TextElideMode.ElideRight, int(meta_rect.width()))
         painter.drawText(meta_rect, Qt.AlignmentFlag.AlignVCenter, elided_meta)
+
+        # ---- 毛玻璃 X 删除按钮 ----
+        x_hovered = bool(index.data(Qt.ItemDataRole.UserRole + 4))
+        self._draw_x_button(painter, rect, x_hovered)
+
+    def _draw_x_button(self, painter: QPainter, item_rect: QRectF, hovered: bool):
+        """在 item 右侧绘制毛玻璃风格 X 删除按钮。"""
+        btn_size = 22.0
+        pad = 4.0
+        x = item_rect.right() - pad - btn_size
+        y = item_rect.center().y() - btn_size / 2
+        btn_rect = QRectF(x, y, btn_size, btn_size)
+        radius = btn_size / 2  # 圆形
+
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        # 半透明白色填充
+        btn_path = QPainterPath()
+        btn_path.addRoundedRect(btn_rect, radius, radius)
+        fill_alpha = 140 if hovered else 60
+        painter.setClipPath(btn_path)
+        painter.fillRect(btn_rect, QColor(255, 255, 255, fill_alpha))
+        painter.setClipping(False)
+
+        # 亮白渐变边框（四角亮 → 中间透明）
+        border_grad = QLinearGradient(btn_rect.topLeft(), btn_rect.bottomRight())
+        border_grad.setColorAt(0.0, QColor(255, 255, 255, 200))
+        border_grad.setColorAt(0.2, QColor(255, 255, 255, 45))
+        border_grad.setColorAt(0.5, QColor(255, 255, 255, 0))
+        border_grad.setColorAt(0.8, QColor(255, 255, 255, 45))
+        border_grad.setColorAt(1.0, QColor(255, 255, 255, 200))
+        painter.setPen(QPen(QBrush(border_grad), 1.0))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawRoundedRect(btn_rect, radius, radius)
+
+        # 内层暗线（四角浓 → 中间无）
+        inner_r = btn_rect.adjusted(0.7, 0.7, -0.7, -0.7)
+        inner_radius = radius - 0.7
+        dark_grad = QLinearGradient(inner_r.topLeft(), inner_r.bottomRight())
+        dark_grad.setColorAt(0.0, QColor(0, 0, 0, 85))
+        dark_grad.setColorAt(0.12, QColor(0, 0, 0, 22))
+        dark_grad.setColorAt(0.35, QColor(0, 0, 0, 0))
+        dark_grad.setColorAt(0.65, QColor(0, 0, 0, 0))
+        dark_grad.setColorAt(0.88, QColor(0, 0, 0, 22))
+        dark_grad.setColorAt(1.0, QColor(0, 0, 0, 85))
+        painter.setPen(QPen(QBrush(dark_grad), 0.7))
+        painter.drawRoundedRect(inner_r, inner_radius, inner_radius)
+
+        # ✕ 字符
+        x_font = QFont(painter.font())
+        x_font.setPixelSize(13)
+        painter.setFont(x_font)
+        painter.setPen(QColor(60, 60, 60))
+        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "✕")
+
+        painter.restore()
 
     def sizeHint(self, option, index):
         return QSize(0, 56)
@@ -218,6 +275,7 @@ class _PreviewDialog(QDialog):
 
 class HistoryListWidget(QListWidget):
     item_copy_clicked = Signal(int)
+    item_delete_requested = Signal(int)
     drag_started = Signal()
 
     _DRAG_DEAD_ZONE = 5
@@ -245,6 +303,9 @@ class HistoryListWidget(QListWidget):
         # right-click preview
         self._preview_dialog: _PreviewDialog | None = None
         self.viewport().installEventFilter(self)
+
+        # X delete button hover tracking
+        self._hovered_delete_item_id: int | None = None
 
     def set_temp_file_manager(self, mgr):
         self._temp_file_manager = mgr
@@ -279,6 +340,7 @@ class HistoryListWidget(QListWidget):
                 pixmap = QPixmap()
                 pixmap.loadFromData(item.image_data)
             list_item.setData(Qt.ItemDataRole.UserRole + 3, pixmap)
+            list_item.setData(Qt.ItemDataRole.UserRole + 4, False)  # X button hover state
 
             list_item.setSizeHint(QSize(0, 56))
             self.addItem(list_item)
@@ -290,12 +352,45 @@ class HistoryListWidget(QListWidget):
                 self.takeItem(i)
                 break
 
+    def _get_x_btn_rect(self, list_item: QListWidgetItem) -> QRectF | None:
+        """返回 X 删除按钮在 viewport 坐标系中的矩形区域。"""
+        idx = self.indexFromItem(list_item)
+        if not idx.isValid():
+            return None
+        rect = self.visualItemRect(list_item)
+        # 与 delegate 中绘制的 card_rect 对齐：adjusted(4, 2, -4, -2)
+        card = QRectF(rect).adjusted(4, 2, -4, -2)
+        btn_size = 22.0
+        pad = 4.0
+        x = card.right() - pad - btn_size
+        y = card.center().y() - btn_size / 2
+        return QRectF(x, y, btn_size, btn_size)
+
+    def _set_item_x_hover(self, item_id, hovered: bool):
+        """更新指定 item 的 X 按钮 hover 状态并触发重绘。"""
+        for i in range(self.count()):
+            item = self.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == item_id:
+                item.setData(Qt.ItemDataRole.UserRole + 4, hovered)
+                self.update(self.indexFromItem(item))
+                break
+
     # ---- mouse events ----
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_press_pos = event.position().toPoint()
-            idx = self.indexAt(self._drag_press_pos)
+            pos = event.position().toPoint()
+            idx = self.indexAt(pos)
+            # 点击 X 按钮 → 删除，不启动拖拽
+            if idx.isValid():
+                item = self.item(idx.row())
+                x_rect = self._get_x_btn_rect(item)
+                if x_rect is not None and x_rect.contains(pos):
+                    item_id = idx.data(Qt.ItemDataRole.UserRole)
+                    if item_id is not None:
+                        self.item_delete_requested.emit(item_id)
+                    return
+            self._drag_press_pos = pos
             self._drag_press_index = idx if idx.isValid() else None
             self._drag_in_progress = False
         super().mousePressEvent(event)
@@ -308,6 +403,31 @@ class HistoryListWidget(QListWidget):
                 self._start_drag(self._drag_press_index)
                 return
         if not self._drag_in_progress:
+            # X 按钮 hover 检测
+            pos = event.position().toPoint()
+            idx = self.indexAt(pos)
+            old_hovered = self._hovered_delete_item_id
+
+            if idx.isValid():
+                item = self.item(idx.row())
+                x_rect = self._get_x_btn_rect(item)
+                if x_rect is not None and x_rect.contains(pos):
+                    self._hovered_delete_item_id = idx.data(Qt.ItemDataRole.UserRole)
+                    self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+                else:
+                    self._hovered_delete_item_id = None
+                    self.viewport().unsetCursor()
+            else:
+                self._hovered_delete_item_id = None
+                self.viewport().unsetCursor()
+
+            # 仅在 hover 状态变化时更新对应 item 的数据
+            if old_hovered != self._hovered_delete_item_id:
+                if old_hovered is not None:
+                    self._set_item_x_hover(old_hovered, False)
+                if self._hovered_delete_item_id is not None:
+                    self._set_item_x_hover(self._hovered_delete_item_id, True)
+
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):

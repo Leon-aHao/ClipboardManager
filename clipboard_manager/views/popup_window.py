@@ -80,6 +80,7 @@ class _GlassButton(QPushButton):
 
 class PopupWindow(QDialog):
     item_clicked = Signal(int)
+    item_delete_requested = Signal(int)
     clear_all_requested = Signal()
     max_records_changed = Signal(int)
 
@@ -141,6 +142,7 @@ class PopupWindow(QDialog):
 
         self._list = HistoryListWidget()
         self._list.item_copy_clicked.connect(self.item_clicked.emit)
+        self._list.item_delete_requested.connect(self.item_delete_requested.emit)
         self._list.setStyleSheet(
             "QListWidget { background: transparent; border: none; }"
             "QListWidget::item { background: transparent; }"

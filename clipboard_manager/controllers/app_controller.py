@@ -60,6 +60,7 @@ class AppController(QObject):
         self._tray.exit_requested.connect(self._save_and_exit)
         self._tray.autostart_toggled.connect(set_autostart)
         self._popup.item_clicked.connect(self._copy_to_clipboard)
+        self._popup.item_delete_requested.connect(self._on_item_delete_requested)
         self._popup.clear_all_requested.connect(self._clear_all)
         self._popup.max_records_changed.connect(self._on_max_records_changed)
 
@@ -112,6 +113,12 @@ class AppController(QObject):
             clipboard.setMimeData(mime)
         else:
             clipboard.setText(item.plain_text)
+
+    def _on_item_delete_requested(self, item_id: int):
+        self._store.remove(item_id)
+        self._db.delete_item(item_id)
+        if self._popup.isVisible():
+            self._popup.set_history(self._store.get_all())
 
     def _on_max_records_changed(self, limit: int):
         self._store.max_records = limit
