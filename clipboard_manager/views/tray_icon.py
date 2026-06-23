@@ -37,6 +37,7 @@ class TrayIcon(QSystemTrayIcon):
     settings_requested = Signal()
     exit_requested = Signal()
     autostart_toggled = Signal(bool)
+    translation_config_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -115,6 +116,11 @@ class TrayIcon(QSystemTrayIcon):
         pause_btn.clicked.connect(self._on_pause_toggle)
         pause_btn.clicked.connect(popup.close)
         layout.addWidget(pause_btn)
+
+        translate_cfg_btn = self._make_popup_btn("翻译配置")
+        translate_cfg_btn.clicked.connect(self.translation_config_requested.emit)
+        translate_cfg_btn.clicked.connect(popup.close)
+        layout.addWidget(translate_cfg_btn)
 
         autostart_text = "✓ 开机自启" if self._autostart_enabled else "开机自启"
         autostart_btn = self._make_popup_btn(autostart_text)

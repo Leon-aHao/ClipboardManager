@@ -15,6 +15,8 @@ class _ItemDelegate(QStyledItemDelegate):
     _NORMAL = QColor(255, 255, 255, 120)
     _HOVER = QColor(255, 255, 255, 180)
     _RADIUS = 14.0
+    _BTN_SIZE = 22.0
+    _BTN_PAD = 4.0
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -55,9 +57,14 @@ class _ItemDelegate(QStyledItemDelegate):
             super().paint(painter, option, index)
             return
 
-        fmt = index.data(Qt.ItemDataRole.UserRole + 2) or ""
+        fmt_icon = index.data(Qt.ItemDataRole.UserRole + 2) or ""
         pixmap = index.data(Qt.ItemDataRole.UserRole + 3)
-        has_icon = bool(pixmap and isinstance(pixmap, QPixmap) and not pixmap.isNull()) or fmt in ("📁",)
+        has_icon = bool(pixmap and isinstance(pixmap, QPixmap) and not pixmap.isNull()) or fmt_icon in ("📁",)
+
+        # 仅文本/HTML 类型显示翻译按钮
+        show_translate = (fmt_icon == "Aa")
+        # 右侧边距：X 按钮占 30px，若有翻译按钮再 + 26px
+        right_margin = 60 if show_translate else 34
 
         if has_icon:
             icon_rect = QRectF(rect).adjusted(8, 8, 0, -8)
@@ -77,11 +84,12 @@ class _ItemDelegate(QStyledItemDelegate):
                 painter.drawPixmap(int(x), int(y), scaled)
             else:
                 painter.setPen(QColor(100, 140, 220))
-                painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, fmt)
+                painter.drawText(icon_rect, Qt.AlignmentFlag.AlignCenter, fmt_icon)
 
-            text_rect = QRectF(rect).adjusted(42, 6, -34, -6)
+            text_rect = QRectF(rect).adjusted(42, 6, -right_margin, -6)
         else:
-            text_rect = QRectF(rect).adjusted(12, 6, -34, -6)
+            text_rect = QRectF(rect).adjusted(12, 6, -right_margin, -6)
+
         preview = index.data(Qt.ItemDataRole.DisplayRole) or ""
         meta = index.data(Qt.ItemDataRole.UserRole + 1) or ""
 
@@ -103,18 +111,29 @@ class _ItemDelegate(QStyledItemDelegate):
         elided_meta = fm_meta.elidedText(meta, Qt.TextElideMode.ElideRight, int(meta_rect.width()))
         painter.drawText(meta_rect, Qt.AlignmentFlag.AlignVCenter, elided_meta)
 
-        # ---- 毛玻璃 X 删除按钮 ----
+        # ---- 操作按钮 ----
         x_hovered = bool(index.data(Qt.ItemDataRole.UserRole + 4))
-        self._draw_x_button(painter, rect, x_hovered)
+        tl_hovered = bool(index.data(Qt.ItemDataRole.UserRole + 6)) if show_translate else False
 
-    def _draw_x_button(self, painter: QPainter, item_rect: QRectF, hovered: bool):
-        """在 item 右侧绘制毛玻璃风格 X 删除按钮。"""
-        btn_size = 22.0
-        pad = 4.0
-        x = item_rect.right() - pad - btn_size
-        y = item_rect.center().y() - btn_size / 2
-        btn_rect = QRectF(x, y, btn_size, btn_size)
-        radius = btn_size / 2  # 圆形
+        # X 删除按钮
+        x_btn_rect = self._action_btn_rect(rect, offset=0)
+        self._draw_action_button(painter, x_btn_rect, "✕", x_hovered)
+
+        # 译 翻译按钮（仅文本类型）
+        if show_translate:
+            tl_btn_rect = self._action_btn_rect(rect, offset=1)
+            self._draw_action_button(painter, tl_btn_rect, "译", tl_hovered)
+
+    def _action_btn_rect(self, card_rect: QRectF, offset: int) -> QRectF:
+        """返回操作按钮在 card_rect 中的位置。offset 0=最右侧(X), 1=左一(译)。"""
+        x = card_rect.right() - self._BTN_PAD - self._BTN_SIZE \
+            - offset * (self._BTN_SIZE + self._BTN_PAD)
+        y = card_rect.center().y() - self._BTN_SIZE / 2
+        return QRectF(x, y, self._BTN_SIZE, self._BTN_SIZE)
+
+    def _draw_action_button(self, painter: QPainter, btn_rect: QRectF, char: str, hovered: bool):
+        """绘制单个毛玻璃风格操作按钮。"""
+        radius = btn_rect.width() / 2
 
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -151,12 +170,12 @@ class _ItemDelegate(QStyledItemDelegate):
         painter.setPen(QPen(QBrush(dark_grad), 0.7))
         painter.drawRoundedRect(inner_r, inner_radius, inner_radius)
 
-        # ✕ 字符
-        x_font = QFont(painter.font())
-        x_font.setPixelSize(13)
-        painter.setFont(x_font)
+        # 字符
+        btn_font = QFont(painter.font())
+        btn_font.setPixelSize(14 if char == "译" else 13)
+        painter.setFont(btn_font)
         painter.setPen(QColor(60, 60, 60))
-        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "✕")
+        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, char)
 
         painter.restore()
 
@@ -273,14 +292,121 @@ class _PreviewDialog(QDialog):
         self.show()
 
 
+class _TranslationResultDialog(QDialog):
+    """毛玻璃弹窗 — 显示原文和翻译结果。"""
+
+    def __init__(self, original: str, translated: str, parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            Qt.WindowType.Tool
+            | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(20, 16, 20, 16)
+        self._layout.setSpacing(8)
+
+        # 原文标签
+        self._src_label = QLabel(original)
+        self._src_label.setWordWrap(True)
+        self._src_label.setStyleSheet("color: #444444; font-size: 13px; background: transparent;")
+        self._src_label.setMaximumWidth(420)
+        self._layout.addWidget(self._src_label)
+
+        # 分隔线
+        self._sep = QLabel(self)
+        self._sep.setFixedHeight(1)
+        self._sep.setStyleSheet("background: rgba(0,0,0,0.08);")
+        self._layout.addWidget(self._sep)
+
+        # 译文标签
+        self._tgt_label = QLabel(translated)
+        self._tgt_label.setWordWrap(True)
+        self._tgt_label.setStyleSheet("color: #1a1a1a; font-size: 16px; font-weight: bold; background: transparent;")
+        self._tgt_label.setMaximumWidth(420)
+        self._layout.addWidget(self._tgt_label)
+
+        self._resize()
+
+    def update_content(self, original: str, translated: str):
+        """更新原文和译文内容（翻译完成时调用）。"""
+        self._src_label.setText(original)
+        self._tgt_label.setText(translated)
+        self._tgt_label.setStyleSheet("color: #1a1a1a; font-size: 16px; font-weight: bold; background: transparent;")
+        self._resize()
+
+    def _resize(self):
+        self.adjustSize()
+        w = min(self.width(), 460)
+        self.setFixedSize(w + 40, self.height() + 32)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        radius = 28.0
+        rect = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+
+        # 白色填充
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+        p.setClipPath(path)
+        p.fillRect(rect, QColor(255, 255, 255, 200))
+        p.setClipping(False)
+
+        # 渐变边框
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        gradient.setColorAt(0.0, QColor(255, 255, 255, 210))
+        gradient.setColorAt(0.2, QColor(255, 255, 255, 50))
+        gradient.setColorAt(0.5, QColor(255, 255, 255, 0))
+        gradient.setColorAt(0.8, QColor(255, 255, 255, 50))
+        gradient.setColorAt(1.0, QColor(255, 255, 255, 210))
+        p.setPen(QPen(QBrush(gradient), 1.5))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(rect, radius, radius)
+
+        # 内层暗线
+        ir = rect.adjusted(1.2, 1.2, -1.2, -1.2)
+        dg = QLinearGradient(ir.topLeft(), ir.bottomRight())
+        dg.setColorAt(0.0, QColor(0, 0, 0, 85))
+        dg.setColorAt(0.12, QColor(0, 0, 0, 22))
+        dg.setColorAt(0.35, QColor(0, 0, 0, 0))
+        dg.setColorAt(0.65, QColor(0, 0, 0, 0))
+        dg.setColorAt(0.88, QColor(0, 0, 0, 22))
+        dg.setColorAt(1.0, QColor(0, 0, 0, 85))
+        p.setPen(QPen(QBrush(dg), 0.8))
+        p.drawRoundedRect(ir, radius - 1.2, radius - 1.2)
+        p.end()
+
+    def show_at_cursor(self):
+        from PySide6.QtGui import QCursor
+        cursor = QCursor.pos()
+        x = cursor.x() - self.width() // 2
+        y = cursor.y() - self.height() - 20
+        screen = QApplication.primaryScreen()
+        if screen:
+            avail = screen.availableGeometry()
+            x = max(avail.left() + 4, min(x, avail.right() - self.width() - 4))
+            y = max(avail.top() + 4, min(y, avail.bottom() - self.height() - 4))
+        self.move(x, y)
+        self.show()
+        self.raise_()
+
+
 class HistoryListWidget(QListWidget):
     item_copy_clicked = Signal(int)
     item_delete_requested = Signal(int)
+    item_translate_requested = Signal(int)
     drag_started = Signal()
 
     _DRAG_DEAD_ZONE = 5
     _PREVIEW_SIZE = 80
     _PREVIEW_OPACITY = 0.7
+    _BTN_SIZE = 22.0
+    _BTN_PAD = 4.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -304,8 +430,9 @@ class HistoryListWidget(QListWidget):
         self._preview_dialog: _PreviewDialog | None = None
         self.viewport().installEventFilter(self)
 
-        # X delete button hover tracking
+        # action button hover tracking
         self._hovered_delete_item_id: int | None = None
+        self._hovered_translate_item_id: int | None = None
 
     def set_temp_file_manager(self, mgr):
         self._temp_file_manager = mgr
@@ -340,10 +467,15 @@ class HistoryListWidget(QListWidget):
                 pixmap = QPixmap()
                 pixmap.loadFromData(item.image_data)
             list_item.setData(Qt.ItemDataRole.UserRole + 3, pixmap)
-            list_item.setData(Qt.ItemDataRole.UserRole + 4, False)  # X button hover state
+            list_item.setData(Qt.ItemDataRole.UserRole + 4, False)   # X hover
+            list_item.setData(Qt.ItemDataRole.UserRole + 6, False)   # translate hover
 
             list_item.setSizeHint(QSize(0, 56))
             self.addItem(list_item)
+
+        # Reset hover state when list refreshes
+        self._hovered_delete_item_id = None
+        self._hovered_translate_item_id = None
 
     def remove_item_by_id(self, item_id: int):
         self._items_by_id.pop(item_id, None)
@@ -352,26 +484,31 @@ class HistoryListWidget(QListWidget):
                 self.takeItem(i)
                 break
 
-    def _get_x_btn_rect(self, list_item: QListWidgetItem) -> QRectF | None:
-        """返回 X 删除按钮在 viewport 坐标系中的矩形区域。"""
+    # ---- button geometry helpers ----
+
+    def _action_btn_rect(self, list_item: QListWidgetItem, offset: int) -> QRectF | None:
+        """返回操作按钮在 viewport 坐标中的矩形。offset 0=X(最右), 1=译(左一)。"""
         idx = self.indexFromItem(list_item)
         if not idx.isValid():
             return None
         rect = self.visualItemRect(list_item)
-        # 与 delegate 中绘制的 card_rect 对齐：adjusted(4, 2, -4, -2)
         card = QRectF(rect).adjusted(4, 2, -4, -2)
-        btn_size = 22.0
-        pad = 4.0
-        x = card.right() - pad - btn_size
-        y = card.center().y() - btn_size / 2
-        return QRectF(x, y, btn_size, btn_size)
+        x = card.right() - self._BTN_PAD - self._BTN_SIZE \
+            - offset * (self._BTN_SIZE + self._BTN_PAD)
+        y = card.center().y() - self._BTN_SIZE / 2
+        return QRectF(x, y, self._BTN_SIZE, self._BTN_SIZE)
 
-    def _set_item_x_hover(self, item_id, hovered: bool):
-        """更新指定 item 的 X 按钮 hover 状态并触发重绘。"""
+    def _has_translate_btn(self, list_item: QListWidgetItem) -> bool:
+        """检查该条目是否显示翻译按钮（仅文本/HTML）。"""
+        icon = list_item.data(Qt.ItemDataRole.UserRole + 2) or ""
+        return icon == "Aa"
+
+    def _set_btn_hover(self, item_id, role_index: int, hovered: bool):
+        """更新指定 item 的按钮 hover 状态并触发重绘。"""
         for i in range(self.count()):
             item = self.item(i)
             if item.data(Qt.ItemDataRole.UserRole) == item_id:
-                item.setData(Qt.ItemDataRole.UserRole + 4, hovered)
+                item.setData(Qt.ItemDataRole.UserRole + role_index, hovered)
                 self.update(self.indexFromItem(item))
                 break
 
@@ -381,14 +518,19 @@ class HistoryListWidget(QListWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             pos = event.position().toPoint()
             idx = self.indexAt(pos)
-            # 点击 X 按钮 → 删除，不启动拖拽
             if idx.isValid():
                 item = self.item(idx.row())
-                x_rect = self._get_x_btn_rect(item)
-                if x_rect is not None and x_rect.contains(pos):
-                    item_id = idx.data(Qt.ItemDataRole.UserRole)
-                    if item_id is not None:
-                        self.item_delete_requested.emit(item_id)
+                item_id = idx.data(Qt.ItemDataRole.UserRole)
+                # 翻译按钮点击
+                if self._has_translate_btn(item):
+                    tl_rect = self._action_btn_rect(item, offset=1)
+                    if tl_rect is not None and tl_rect.contains(pos) and item_id is not None:
+                        self.item_translate_requested.emit(item_id)
+                        return
+                # X 删除按钮点击
+                x_rect = self._action_btn_rect(item, offset=0)
+                if x_rect is not None and x_rect.contains(pos) and item_id is not None:
+                    self.item_delete_requested.emit(item_id)
                     return
             self._drag_press_pos = pos
             self._drag_press_index = idx if idx.isValid() else None
@@ -403,30 +545,49 @@ class HistoryListWidget(QListWidget):
                 self._start_drag(self._drag_press_index)
                 return
         if not self._drag_in_progress:
-            # X 按钮 hover 检测
             pos = event.position().toPoint()
             idx = self.indexAt(pos)
-            old_hovered = self._hovered_delete_item_id
+            old_x = self._hovered_delete_item_id
+            old_tl = self._hovered_translate_item_id
+            new_x = None
+            new_tl = None
 
             if idx.isValid():
                 item = self.item(idx.row())
-                x_rect = self._get_x_btn_rect(item)
+                item_id = idx.data(Qt.ItemDataRole.UserRole)
+
+                # Check translate button hover
+                if self._has_translate_btn(item):
+                    tl_rect = self._action_btn_rect(item, offset=1)
+                    if tl_rect is not None and tl_rect.contains(pos):
+                        new_tl = item_id
+
+                # Check X button hover
+                x_rect = self._action_btn_rect(item, offset=0)
                 if x_rect is not None and x_rect.contains(pos):
-                    self._hovered_delete_item_id = idx.data(Qt.ItemDataRole.UserRole)
-                    self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-                else:
-                    self._hovered_delete_item_id = None
-                    self.viewport().unsetCursor()
+                    new_x = item_id
+
+            # Update cursor
+            if new_x is not None or new_tl is not None:
+                self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
             else:
-                self._hovered_delete_item_id = None
                 self.viewport().unsetCursor()
 
-            # 仅在 hover 状态变化时更新对应 item 的数据
-            if old_hovered != self._hovered_delete_item_id:
-                if old_hovered is not None:
-                    self._set_item_x_hover(old_hovered, False)
-                if self._hovered_delete_item_id is not None:
-                    self._set_item_x_hover(self._hovered_delete_item_id, True)
+            # Update hover states
+            self._hovered_delete_item_id = new_x
+            self._hovered_translate_item_id = new_tl
+
+            if old_x != new_x:
+                if old_x is not None:
+                    self._set_btn_hover(old_x, 4, False)
+                if new_x is not None:
+                    self._set_btn_hover(new_x, 4, True)
+
+            if old_tl != new_tl:
+                if old_tl is not None:
+                    self._set_btn_hover(old_tl, 6, False)
+                if new_tl is not None:
+                    self._set_btn_hover(new_tl, 6, True)
 
             super().mouseMoveEvent(event)
 
