@@ -2,6 +2,12 @@
 
 Windows 系统托盘剪贴板历史管理工具，基于 PySide6 + SQLite 开发。
 
+![主界面](docs/images/新功能1.png)
+
+![预览](docs/images/新功能2.png)
+
+![翻译](docs/images/新功能3.png)
+
 ## 功能特性
 
 - **自动监控剪贴板** — 支持文本、HTML、图片、文件列表、颜色值等格式
@@ -13,10 +19,6 @@ Windows 系统托盘剪贴板历史管理工具，基于 PySide6 + SQLite 开发
 - **开机自启** — 可配置的自动启动
 - **暂停监听** — 防止敏感信息被记录
 - **可配置记录数** — 20/50 条，超出自动淘汰
-
-![ClipboardManager 主界面](docs/images/clipboard01.png)
-
-![右键放大预览](docs/images/clipboard02.png)
 
 ## 快速开始
 
@@ -49,38 +51,4 @@ clipboard_manager/
 ├── models/                 # 数据模型 + SQLite 数据库
 ├── views/                  # PySide6 UI（弹窗、托盘、历史列表）
 └── utils/                  # Win32 API、主题管理、临时文件
-```
-## Requirements
-
-- Windows 10+
-- Python 3.10+
-- PySide6 >= 6.5.0
-
-## Quick Start
-
-```bash
-pip install -r requirements.txt
-python -m clipboard_manager.main
-```
-
-## Download
-
-从 [Releases](https://github.com/Leon-aHao/clipboard-manager-demo/releases) 页面下载 `ClipboardManager.exe`，双击运行，无需安装 Python。
-
-## Build
-
-```bash
-pyinstaller clipboard_manager.spec
-```
-
-## Project Structure
-
-```
-clipboard_manager/
-├── main.py                 # Entry point
-├── controllers/            # App controller (wires signals/slots)
-├── core/                   # Clipboard monitor, format detection, hashing
-├── models/                 # Data models + SQLite database
-├── views/                  # PySide6 UI (popup, tray, history list)
-└── utils/                  # Win32 API, themes, temp files
 ```
