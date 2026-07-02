@@ -1,38 +1,55 @@
-# Clipboard Manager
+# ClipboardManager
 
-A Windows system-tray clipboard history manager built with PySide6.
+Windows 系统托盘剪贴板历史管理工具，基于 PySide6 + SQLite 开发。
 
-## 这个剪切板有哪些优势？
+## 功能特性
 
-Windows 自带的剪贴板（Win+V）有两个small缺陷：
+- **自动监控剪贴板** — 支持文本、HTML、图片、文件列表、颜色值等格式
+- **毛玻璃弹窗 UI** — 鼠标跟随光晕动画，无边框玻璃拟态设计
+- **右键预览** — 按住右键放大查看图片细节或长文本全文
+- **拖拽导出** — 直接拖到桌面保存、拖到微信/QQ/Word 发送
+- **英译中翻译** — 点击"译"按钮一键翻译英文内容，支持百度翻译 API
+- **单条删除** — 每条记录右侧 X 按钮直接删除
+- **开机自启** — 可配置的自动启动
+- **暂停监听** — 防止敏感信息被记录
+- **可配置记录数** — 20/50 条，超出自动淘汰
 
-1. **无法预览内容** — 图片和长文本缩在小小的条目里，根本看不清
-2. **无法拖拽复用** — 只能点一下粘贴到当前窗口，无法把图片拖到桌面保存，也无法拖到微信/Word 等应用中
-
-Clipboard Manager 解决了这两个问题。
-
-### 右键预览
-
-鼠标右键按住条目即可放大预览，图片可查看细节，长文本可逐行阅读，松开即关。
-
-![Clipboard Manager 主界面](docs/images/clipboard01.png)
-
-### 拖拽到任意应用
-
-直接把图片拖到桌面保存为文件，拖到微信/QQ 聊天窗口发送，拖到 Word/PPT 嵌入文档。也可以拖出文字、HTML、文件列表。
+![ClipboardManager 主界面](docs/images/clipboard01.png)
 
 ![右键放大预览](docs/images/clipboard02.png)
 
-## Features
+## 快速开始
 
-♥- 监控系统剪贴板，支持文本、HTML、图片、文件列表、颜色值
-♥- **右键长按任意条目即可放大预览**（图片 / 长文本均支持）
-♥- **拖拽条目到桌面 / 微信 / Word 等任意应用**
-♥- 玻璃拟态弹窗 UI，鼠标跟随光晕动画(两个光晕)
-♥- 开机自启(支持自定义开关开机自启)
-♥- 支持开启关闭监听(防止复制到敏感信息)
-♥- 支持保存20/50条记录，超过后自动清除
-♥- 固定到任务栏后，使用非常方便
+```bash
+pip install -r requirements.txt
+python -m clipboard_manager.main
+```
+
+## 下载
+
+从 [Releases](https://github.com/Leon-aHao/ClipboardManager/releases) 页面下载 `ClipboardManager.exe`，双击运行，无需安装 Python。
+
+## 自行构建
+
+```bash
+pyinstaller clipboard_manager.spec
+```
+
+## 翻译配置
+
+默认使用百度翻译 API（需自行申请 appid/key）。配置文件位于 `%APPDATA%/ClipboardManager/translation_config.json`，也可在托盘右键菜单 → 翻译配置中打开。
+
+## 项目结构
+
+```
+clipboard_manager/
+├── main.py                 # 入口
+├── controllers/            # AppController 中央调度器
+├── core/                   # 剪贴板监控、格式检测、哈希去重、翻译服务
+├── models/                 # 数据模型 + SQLite 数据库
+├── views/                  # PySide6 UI（弹窗、托盘、历史列表）
+└── utils/                  # Win32 API、主题管理、临时文件
+```
 ## Requirements
 
 - Windows 10+
